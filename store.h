@@ -8,12 +8,19 @@
 #include "chat.h"
 #include "cart.h"
 #include "sync.h"
+#include "browse.h"
+#include "tui.h"
 
 //==========================================
 // STORE MODULE (main page)
-// Ties all modules together: login, the store page with prices and ratings,
-// cart + checkout with a wallet, wishlist, reviews, publishing games,
-// friends and live chat.
+// Ties all modules together: login, the store page (colored table with prices,
+// ratings and tags), tag filter + sorting, cart + checkout with a wallet, wishlist,
+// reviews, friends and live chat, and the Developer Studio.
+//
+// TWO KINDS OF ACCOUNT:
+//   Player    - browses, buys, reviews, chats
+//   Developer - everything a player does, plus publishing and editing their own games
+//               (a developer account needs the access code below when it is created)
 //
 // SEVERAL TERMINALS: every terminal keeps its own copy of the data in memory,
 // so before a change is made the program
@@ -34,6 +41,9 @@ const std::string CHAT_FILE     = "steam_chat.txt";
 // false = any logged in user may comment on any game
 const bool REQUIRE_OWNERSHIP_TO_REVIEW = true;
 
+// needed to create a DEVELOPER account (change it before handing the program to others)
+const std::string DEVELOPER_ACCESS_CODE = "dev2026";
+
 // limits for the simulated wallet top-up (in cents)
 const int MIN_TOPUP_CENTS = 100;       // $1.00
 const int MAX_TOPUP_CENTS = 50000;     // $500.00
@@ -44,6 +54,8 @@ struct Store {
     ReviewList reviews;
     FriendList friends;
     Cart cart;                          // only lives during the login session
+    SortKey sortKey = SORT_ID;          // how the store page is sorted
+    std::vector<std::string> tagFilter; // tags the store page is filtered by (empty = show all)
     ChatListener chat;                  // owns the background thread
     AccountNode* current = nullptr;     // the logged in user, nullptr = guest
 };
@@ -166,9 +178,9 @@ public:
 //==========================
 void seedGames(Store& st) {
     createGame(st.games, "Space Miner", "Dig asteroids, sell ore and upgrade your ship.", "simulation, space, singleplayer", 1499);
-    createGame(st.games, "Dungeon Dash", "Race through procedurally generated dungeons.", "action, roguelike", 999);
+    createGame(st.games, "Dungeon Dash", "Race through procedurally generated dungeons.", "action, roguelike, singleplayer", 999);
     createGame(st.games, "Farm Valley", "Grow crops, raise animals and befriend the village.", "farming, relaxing, co-op", 1999);
-    createGame(st.games, "Block Builders", "Build anything with friends in an open sandbox.", "sandbox, multiplayer, creative", 0);
+    createGame(st.games, "Block Builders", "Build anything with friends in an open sandbox.", "sandbox, multiplayer, creative, co-op", 0);
 }
 
 void initStore(Store& st) {
@@ -182,54 +194,149 @@ void initStore(Store& st) {
     }
 }
 
-//==========================
-// store page: every game, with price and rating line
-//==========================
-void printGameLine(const Store& st, const GameNode* g) {
-    int total, rec;
-    reviewStats(st.reviews, g->gameId, total, rec);
-
-    std::cout << "  [" << g->gameId << "] " << g->title << "  -  " << priceText(g->priceCents);
-    if (total == 0) std::cout << "  -  no reviews yet";
-    else std::cout << "  -  " << recommendPercent(st.reviews, g->gameId) << "% recommended (" << total << " review" << (total == 1 ? "" : "s") << ")";
-    if (st.current != nullptr) {
-        if (ownsGame(st.current, g->gameId)) std::cout << "  [OWNED]";
-        else if (inCart(st.cart, g->gameId)) std::cout << "  [IN CART]";
-        else if (onWishlist(st.current, g->gameId)) std::cout << "  [WISHLISTED]";
-    }
-    std::cout << "\n      Tags: " << (g->tags.empty() ? "(none)" : g->tags) << "\n";
+// name of a user id, "(unknown)" when the account does not exist
+std::string nameOf(const Store& st, int userId) {
+    AccountNode* acc = findAccountById(st.accounts, userId);
+    return acc == nullptr ? "(unknown)" : acc->username;
 }
 
-void showStorePage(const Store& st) {
-    std::cout << "\n================ STORE ================\n";
-    if (st.current != nullptr) {
-        std::cout << "Logged in as: " << st.current->username << " (id " << st.current->userId << ")\n"
-                  << "Wallet: " << moneyText(st.current->walletCents)
-                  << "  |  Cart: " << st.cart.count
-                  << "  |  Wishlist: " << st.current->wishCount
-                  << "  |  Unread messages: " << st.chat.totalUnread()
-                  << "  |  Friend requests: " << countIncoming(st.friends, st.current->userId) << "\n";
-    } else {
-        std::cout << "Browsing as guest (log in to buy and review)\n";
+// how many accounts own a game (the developer's "copies sold", free games included)
+int ownersCount(const Store& st, int gameId) {
+    int n = 0;
+    for (AccountNode* a = st.accounts.head; a != nullptr; a = a->next) {
+        if (ownsGame(a, gameId)) n++;
     }
-    std::cout << "---------------------------------------\n";
-    if (st.games.count == 0) std::cout << "  (no games yet)\n";
-    for (GameNode* g = st.games.head; g != nullptr; g = g->next) printGameLine(st, g);
-    std::cout << "=======================================\n";
+    return n;
+}
+
+//==========================
+// game table (the store page, search results)
+// column widths: ST 2 | ID 3 | TITLE 18 | PRICE 8 | RATING 9 | TAGS 20
+//==========================
+const size_t W_ST = 2, W_ID = 3, W_TITLE = 18, W_PRICE = 8, W_RATING = 9, W_TAGS = 20;
+
+std::string tableRule() {
+    size_t widths[6] = {W_ST, W_ID, W_TITLE, W_PRICE, W_RATING, W_TAGS};
+    std::string rule = "+";
+    for (int i = 0; i < 6; i++) rule += repeatChar('-', widths[i] + 2) + "+";
+    return rule;
+}
+
+void printTableHeader() {
+    std::cout << paint(tableRule(), C_DIM) << "\n"
+              << "| " << paint(fit("ST", W_ST), C_BOLD) << " | " << paint(fitRight("ID", W_ID), C_BOLD)
+              << " | " << paint(fit("TITLE", W_TITLE), C_BOLD) << " | " << paint(fit("PRICE", W_PRICE), C_BOLD)
+              << " | " << paint(fit("RATING", W_RATING), C_BOLD) << " | " << paint(fit("TAGS", W_TAGS), C_BOLD) << " |\n"
+              << paint(tableRule(), C_DIM) << "\n";
+}
+
+void printGameRow(const Store& st, const GameNode* g) {
+    // ST column: O = owned, C = in the cart, W = on the wishlist
+    std::string mark = "";
+    const char* markColor = C_RESET;
+    if (st.current != nullptr) {
+        if (ownsGame(st.current, g->gameId)) { mark = "O"; markColor = C_CYAN; }
+        else if (inCart(st.cart, g->gameId)) { mark = "C"; markColor = C_YELLOW; }
+        else if (onWishlist(st.current, g->gameId)) { mark = "W"; markColor = C_MAGENTA; }
+    }
+
+    // rating: percent recommended and how many reviews it is based on
+    std::string rating = "-";
+    const char* ratingColor = C_DIM;
+    int total, rec;
+    reviewStats(st.reviews, g->gameId, total, rec);
+    if (total > 0) {
+        int pct = recommendPercent(st.reviews, g->gameId);
+        rating = std::to_string(pct) + "% (" + std::to_string(total) + ")";
+        ratingColor = (pct >= 70) ? C_GREEN : (pct >= 40 ? C_YELLOW : C_RED);
+    }
+
+    std::cout << "| " << paint(fit(mark, W_ST), markColor)
+              << " | " << fitRight(std::to_string(g->gameId), W_ID)
+              << " | " << paint(fit(g->title, W_TITLE), C_BOLD)
+              << " | " << paint(fit(priceText(g->priceCents), W_PRICE), g->priceCents == 0 ? C_GREEN : C_YELLOW)
+              << " | " << paint(fit(rating, W_RATING), ratingColor)
+              << " | " << paint(fit(g->tags, W_TAGS), C_MAGENTA) << " |\n";
+}
+
+void printGameTable(const Store& st, const std::vector<const GameNode*>& list) {
+    printTableHeader();
+    for (size_t i = 0; i < list.size(); i++) printGameRow(st, list[i]);
+    std::cout << paint(tableRule(), C_DIM) << "\n";
+}
+
+// every tag in the store with the number of games, wrapped to the screen width
+void showTagIndex(const Store& st) {
+    std::map<std::string, int> index = buildTagIndex(st.games);
+    std::cout << " Tags in the store:\n";
+    if (index.empty()) { std::cout << "  (none yet)\n"; return; }
+
+    std::string line = " ";
+    size_t visible = 1;
+    for (std::map<std::string, int>::const_iterator it = index.begin(); it != index.end(); ++it) {
+        std::string chip = "[" + it->first + " " + std::to_string(it->second) + "]";
+        if (visible + chip.size() + 1 > TUI_WIDTH) {
+            std::cout << line << "\n";
+            line = " ";
+            visible = 1;
+        }
+        line += " " + paint(chip, C_MAGENTA);
+        visible += chip.size() + 1;
+    }
+    std::cout << line << "\n";
+}
+
+//==========================
+// store page: banner, status bar, filter line, table of games
+//==========================
+void showStorePage(const Store& st) {
+    tuiBanner("G A M E   S T O R E");
+
+    if (st.current != nullptr) {
+        std::string role = isDeveloper(st.current) ? paint("DEVELOPER", C_MAGENTA) : paint("PLAYER", C_GREEN);
+        std::cout << " " << paint(st.current->username, C_BOLD) << "  (id " << st.current->userId << ", " << role << ")\n"
+                  << " Wallet " << paint(moneyText(st.current->walletCents), C_GREEN)
+                  << "  |  Cart " << st.cart.count
+                  << "  |  Wishlist " << st.current->wishCount
+                  << "  |  Unread " << st.chat.totalUnread()
+                  << "  |  Friend requests " << countIncoming(st.friends, st.current->userId) << "\n";
+    } else {
+        std::cout << " Browsing as a guest. Create an account or log in to buy, review and chat.\n";
+    }
+    tuiRule();
+
+    std::cout << " Sort: " << paint(sortName(st.sortKey), C_BOLD);
+    if (!st.tagFilter.empty()) std::cout << "   Filter: " << tagChips(st.tagFilter);
+    std::cout << "\n";
+
+    std::vector<const GameNode*> list = collectGames(st.games, st.tagFilter);
+    insertionSortGames(list, st.sortKey, st.reviews);
+
+    if (list.empty()) {
+        std::cout << (st.games.count == 0 ? "  (no games yet)\n" : "  No game has all of those tags. Clear the filter in Sort / filter.\n");
+    } else {
+        printGameTable(st, list);
+        std::cout << " ST: O owned, C in cart, W wishlist   Showing " << list.size() << " of " << st.games.count << " games\n";
+    }
 }
 
 //==========================
 // one game page: details + all reviews
 //==========================
 void showGamePage(const Store& st, const GameNode* g) {
-    std::cout << "\n---------- GAME PAGE ----------\n";
-    displayGameDetails(g);
+    tuiSection("GAME PAGE");
+    std::cout << " " << paint("[" + std::to_string(g->gameId) + "] " + g->title, C_BOLD) << "   "
+              << paint(priceText(g->priceCents), g->priceCents == 0 ? C_GREEN : C_YELLOW) << "\n"
+              << " Developer: " << (g->developerId == 0 ? std::string("Game Store") : nameOf(st, g->developerId)) << "\n"
+              << " " << g->description << "\n"
+              << " Tags: " << (g->tags.empty() ? "(none)" : tagChips(splitTags(g->tags))) << "\n";
+
     int total, rec;
     reviewStats(st.reviews, g->gameId, total, rec);
-    if (total > 0) std::cout << "      Rating: " << recommendPercent(st.reviews, g->gameId) << "% recommended (" << rec << " of " << total << ")\n";
-    std::cout << "  Reviews:\n";
+    if (total > 0) std::cout << " Rating: " << recommendPercent(st.reviews, g->gameId) << "% recommended (" << rec << " of " << total << ")\n";
+    std::cout << " Reviews:\n";
     displayReviewsForGame(st.reviews, g->gameId);
-    std::cout << "-------------------------------\n";
+    tuiRule();
 }
 
 //==========================
@@ -255,28 +362,44 @@ GameNode* askForGame(const Store& st) {
 // account actions
 //==========================
 void doRegister(Store& st) {
-    std::string user, pass, confirm;
-    std::cout << "\n-- Create account --\n(username: 3-20 letters, digits or _ ; password: at least 4 characters)\n";
+    std::string user, pass, confirm, type;
+    tuiSection("CREATE ACCOUNT");
+    std::cout << " (username: 3-20 letters, digits or _ ; password: at least 4 characters)\n";
     if (!readLine("Username: ", user)) return;
     if (!readLine("Password: ", pass)) return;
     if (!readLine("Confirm password: ", confirm)) return;
+    if (!readLine("Account type: 1) Player  2) Developer [1]: ", type)) return;
 
     if (pass != confirm) { std::cout << "  Passwords do not match.\n"; return; }
     if (!validUsername(user)) { std::cout << "  Invalid username.\n"; return; }
     if (pass.size() < 4) { std::cout << "  Password is too short.\n"; return; }
 
+    // developer accounts are protected by an access code
+    int role = ROLE_PLAYER;
+    type = gameTrim(type);
+    if (type == "2") {
+        std::string code;
+        if (!readLine("Developer access code: ", code)) return;
+        if (code != DEVELOPER_ACCESS_CODE) { std::cout << "  Wrong access code. No account was created.\n"; return; }
+        role = ROLE_DEVELOPER;
+    } else if (!type.empty() && type != "1") {
+        std::cout << "  Please choose 1 or 2.\n";
+        return;
+    }
+
     Transaction tx(st);
     if (!tx.ok()) return;
-    AccountNode* acc = createAccount(st.accounts, user, pass);
+    AccountNode* acc = createAccount(st.accounts, user, pass, role);
     if (acc == nullptr) { std::cout << "  That username is already taken.\n"; return; }
 
     int newId = acc->userId;
-    if (tx.commit()) std::cout << "  Account created! Your user id is " << newId << ". You can log in now.\n";
+    if (tx.commit()) std::cout << "  " << (role == ROLE_DEVELOPER ? "Developer" : "Player") << " account created! Your user id is "
+                               << newId << ". You can log in now.\n";
 }
 
 void doLogin(Store& st) {
     std::string user, pass;
-    std::cout << "\n-- Log in --\n";
+    tuiSection("LOG IN");
     if (!readLine("Username: ", user)) return;
     if (!readLine("Password: ", pass)) return;
 
@@ -285,7 +408,7 @@ void doLogin(Store& st) {
     st.current = acc;
     clearCart(st.cart);
     st.chat.start(acc->userId, CHAT_FILE, acc->lastSeenMsg);     // starts the background thread
-    std::cout << "  Welcome back, " << acc->username << "!\n";
+    std::cout << "  Welcome back, " << acc->username << (isDeveloper(acc) ? " (developer)" : "") << "!\n";
     int unread = st.chat.totalUnread();
     if (unread > 0) std::cout << "  You have " << unread << " unread message" << (unread == 1 ? "" : "s") << ".\n";
 }
@@ -311,11 +434,59 @@ void doSearch(const Store& st) {
     key = gameTrim(key);
     if (key.empty()) { std::cout << "  Nothing to search for.\n"; return; }
 
-    int found = 0;
+    std::vector<const GameNode*> found;
     for (GameNode* g = st.games.head; g != nullptr; g = g->next) {
-        if (gameMatches(g, key)) { printGameLine(st, g); found++; }
+        if (gameMatches(g, key)) found.push_back(g);
     }
-    if (found == 0) std::cout << "  No games match \"" << key << "\".\n";
+    if (found.empty()) { std::cout << "  No games match \"" << key << "\".\n"; return; }
+
+    insertionSortGames(found, st.sortKey, st.reviews);      // results follow the chosen sort order
+    tuiSection("SEARCH RESULTS");
+    printGameTable(st, found);
+}
+
+// choose how the store page is sorted and which tags it is filtered by
+void doSortFilter(Store& st) {
+    while (true) {
+        tuiSection("SORT AND FILTER");
+        std::cout << " Sort  : " << paint(sortName(st.sortKey), C_BOLD) << "\n"
+                  << " Filter: " << (st.tagFilter.empty() ? std::string("none") : tagChips(st.tagFilter)) << "\n\n";
+        showTagIndex(st);
+        std::cout << "\n 1. Choose the sort order\n 2. Filter by tags (a game must have ALL of them)\n"
+                  << " 3. Clear the filter\n 0. Back to the store\n";
+        int c = readInt("Choice: ");
+        if (c == -2 || c == 0) return;
+
+        if (c == 1) {
+            for (int k = 0; k < SORT_KEY_COUNT; k++) std::cout << "  " << (k + 1) << ". " << sortName((SortKey)k) << "\n";
+            int s = readInt("Sort by: ");
+            if (s >= 1 && s <= (int)SORT_KEY_COUNT) st.sortKey = (SortKey)(s - 1);
+            else if (s != -2) std::cout << "  Invalid choice.\n";
+        } else if (c == 2) {
+            std::string in;
+            if (!readLine("Tags (comma separated, e.g. action, co-op): ", in)) return;
+            std::vector<std::string> wanted = splitTags(in);
+            if (wanted.empty()) { std::cout << "  No tags entered.\n"; continue; }
+
+            std::map<std::string, int> index = buildTagIndex(st.games);
+            bool allKnown = true;
+            for (size_t i = 0; i < wanted.size(); i++) {
+                if (index.find(wanted[i]) == index.end()) {
+                    std::cout << "  No game uses the tag \"" << wanted[i] << "\".\n";
+                    allKnown = false;
+                }
+            }
+            if (allKnown) {
+                st.tagFilter = wanted;
+                std::cout << "  Filter applied.\n";
+            }
+        } else if (c == 3) {
+            st.tagFilter.clear();
+            std::cout << "  Filter cleared.\n";
+        } else {
+            std::cout << "  Invalid choice.\n";
+        }
+    }
 }
 
 void doLibrary(const Store& st) {
@@ -481,6 +652,10 @@ void doReview(Store& st) {
     int gid = g->gameId;
     std::string title = g->title;
 
+    if (g->developerId == st.current->userId) {
+        std::cout << "  You can not review a game you published.\n";
+        return;
+    }
     if (REQUIRE_OWNERSHIP_TO_REVIEW && !ownsGame(st.current, gid)) {
         std::cout << "  You need to own " << title << " before reviewing it.\n";
         return;
@@ -501,26 +676,109 @@ void doReview(Store& st) {
     if (tx.commit()) std::cout << (result == 1 ? "  Review posted!\n" : "  Review updated!\n");
 }
 
+//==========================
+// developer studio (developer accounts only)
+//==========================
+bool requireDeveloper(const Store& st) {
+    if (!isDeveloper(st.current)) {
+        std::cout << "  Only developer accounts can publish or edit games.\n";
+        return false;
+    }
+    return true;
+}
+
 void doPublish(Store& st) {
+    if (!requireDeveloper(st)) return;
+
     std::string title, desc, tags, priceIn;
-    std::cout << "\n-- Publish a new game --\n";
+    tuiSection("PUBLISH A NEW GAME");
+    showTagIndex(st);
+    std::cout << " (give 1-" << MAX_TAGS << " tags, reuse the tags above so players can find your game)\n";
     if (!readLine("Title: ", title)) return;
     if (!readLine("Description: ", desc)) return;
     if (!readLine("Tags (comma separated): ", tags)) return;
     if (!readLine("Price (e.g. 9.99, or 0 for free): ", priceIn)) return;
 
+    if (normalizeTags(tags).empty()) { std::cout << "  A game needs at least one tag.\n"; return; }
     int price = parseMoney(priceIn);
     if (price < 0) { std::cout << "  Invalid price.\n"; return; }
 
     Transaction tx(st);
     if (!tx.ok()) return;
-    GameNode* g = createGame(st.games, title, desc, tags, price);
+    if (!requireDeveloper(st)) return;                      // checked again on the fresh data
+    GameNode* g = createGame(st.games, title, desc, tags, price, st.current->userId);
     if (g == nullptr) { std::cout << "  Title is empty or a game with that title already exists.\n"; return; }
 
-    addOwnedGame(st.current, g->gameId);     // the publisher gets a copy
+    addOwnedGame(st.current, g->gameId);     // the developer gets a copy
     int newId = g->gameId;
     std::string newTitle = g->title;
-    if (tx.commit()) std::cout << "  Published! \"" << newTitle << "\" has game id " << newId << " and costs " << priceText(price) << ".\n";
+    std::string newTags = g->tags;
+    if (tx.commit()) std::cout << "  Published! \"" << newTitle << "\" has game id " << newId << ", costs " << priceText(price)
+                               << " and has the tags: " << newTags << ".\n";
+}
+
+void showMyGames(const Store& st) {
+    int me = st.current->userId;
+    int shown = 0;
+    std::cout << " Your published games:\n";
+    for (GameNode* g = st.games.head; g != nullptr; g = g->next) {
+        if (g->developerId != me) continue;
+        int total, rec;
+        reviewStats(st.reviews, g->gameId, total, rec);
+        std::cout << "  [" << g->gameId << "] " << paint(g->title, C_BOLD) << "  " << priceText(g->priceCents)
+                  << "  |  owners " << ownersCount(st, g->gameId);
+        if (total > 0) std::cout << "  |  " << recommendPercent(st.reviews, g->gameId) << "% recommended (" << total << ")";
+        else std::cout << "  |  no reviews";
+        std::cout << "\n      " << tagChips(splitTags(g->tags)) << "\n";
+        shown++;
+    }
+    if (shown == 0) std::cout << "  (none yet, publish your first game)\n";
+}
+
+void doEditGame(Store& st) {
+    if (!requireDeveloper(st)) return;
+    GameNode* g = askForGame(st);
+    if (g == nullptr) return;
+    if (g->developerId != st.current->userId) { std::cout << "  You can only edit games you published.\n"; return; }
+    int gid = g->gameId;
+    std::string title = g->title;
+
+    std::string priceIn, desc, tags;
+    std::cout << " Editing \"" << title << "\" (leave a line empty to keep the old value)\n";
+    if (!readLine("New price (now " + priceText(g->priceCents) + "): ", priceIn)) return;
+    if (!readLine("New description: ", desc)) return;
+    if (!readLine("New tags (now " + g->tags + "): ", tags)) return;
+
+    int price = -1;                                          // -1 = keep
+    if (!gameTrim(priceIn).empty()) {
+        price = parseMoney(priceIn);
+        if (price < 0) { std::cout << "  Invalid price, nothing was changed.\n"; return; }
+    }
+
+    Transaction tx(st);
+    if (!tx.ok()) return;
+    GameNode* fresh = findGameById(st.games, gid);           // the old pointer is gone after the reload
+    if (fresh == nullptr || fresh->developerId != st.current->userId || !isDeveloper(st.current)) {
+        std::cout << "  You can only edit games you published.\n";
+        return;
+    }
+    updateGame(fresh, desc, tags, price);
+    if (tx.commit()) std::cout << "  \"" << title << "\" was updated.\n";
+}
+
+void doStudio(Store& st) {
+    if (!requireDeveloper(st)) return;
+    while (true) {
+        reloadStore(st);
+        tuiSection("DEVELOPER STUDIO");
+        showMyGames(st);
+        std::cout << "\n 1. Publish a new game\n 2. Edit one of my games\n 0. Back\n";
+        int c = readInt("Choice: ");
+        if (c == -2 || c == 0) return;
+        if (c == 1) doPublish(st);
+        else if (c == 2) doEditGame(st);
+        else std::cout << "  Invalid choice.\n";
+    }
 }
 
 //==========================
@@ -529,11 +787,6 @@ void doPublish(Store& st) {
 // the other user of a friendship record
 int otherUser(const FriendNode* link, int me) {
     return link->fromId == me ? link->toId : link->fromId;
-}
-
-std::string nameOf(const Store& st, int userId) {
-    AccountNode* acc = findAccountById(st.accounts, userId);
-    return acc == nullptr ? "(unknown)" : acc->username;
 }
 
 void showFriends(const Store& st) {
@@ -681,51 +934,83 @@ void doMessages(Store& st) {
 
 //==========================
 // menus
+// The entries of a menu are built first and numbered in order, so a player never sees
+// the Developer Studio entry and the numbers stay without gaps.
 //==========================
-// returns false when the user chooses Exit (or the input ended)
+enum MenuAction {
+    ACT_REGISTER, ACT_LOGIN, ACT_VIEW, ACT_SEARCH, ACT_SORT, ACT_ADD_CART, ACT_CART, ACT_WISHLIST,
+    ACT_LIBRARY, ACT_REVIEW, ACT_WALLET, ACT_FRIENDS, ACT_MESSAGES, ACT_STUDIO, ACT_LOGOUT
+};
+
+struct MenuEntry {
+    MenuAction action;
+    std::string label;
+};
+
+void runAction(Store& st, MenuAction action) {
+    switch (action) {
+        case ACT_REGISTER: doRegister(st); break;
+        case ACT_LOGIN:    doLogin(st); break;
+        case ACT_VIEW:     doViewGame(st); break;
+        case ACT_SEARCH:   doSearch(st); break;
+        case ACT_SORT:     doSortFilter(st); break;
+        case ACT_ADD_CART: doAddToCart(st); break;
+        case ACT_CART:     doCart(st); break;
+        case ACT_WISHLIST: doWishlist(st); break;
+        case ACT_LIBRARY:  doLibrary(st); break;
+        case ACT_REVIEW:   doReview(st); break;
+        case ACT_WALLET:   doWallet(st); break;
+        case ACT_FRIENDS:  doFriends(st); break;
+        case ACT_MESSAGES: doMessages(st); break;
+        case ACT_STUDIO:   doStudio(st); break;
+        case ACT_LOGOUT:   doLogout(st); break;
+    }
+}
+
+// prints the menu, reads the choice and runs it. returns false when the user chooses Exit
+bool handleMenu(Store& st, const std::vector<MenuEntry>& entries) {
+    std::vector<std::string> labels;
+    for (size_t i = 0; i < entries.size(); i++) labels.push_back(entries[i].label);
+    tuiMenu(labels, "Exit");
+
+    int c = readInt("Choice: ");
+    if (c == -2 || c == 0) return false;                    // exit, or the input ended
+    if (c < 0 || c > (int)entries.size()) { std::cout << "  Invalid choice.\n"; return true; }
+    runAction(st, entries[c - 1].action);
+    return true;
+}
+
 bool guestMenu(Store& st) {
     reloadStore(st);
     showStorePage(st);
-    std::cout << "\n1. Create account\n2. Log in\n3. View a game page\n4. Search\n0. Exit\n";
-    int c = readInt("Choice: ");
-    if (c == -2) return false;              // input ended, leave the program
-    switch (c) {
-        case 1: doRegister(st); break;
-        case 2: doLogin(st); break;
-        case 3: doViewGame(st); break;
-        case 4: doSearch(st); break;
-        case 0: return false;
-        default: std::cout << "  Invalid choice.\n";
-    }
-    return true;
+    std::vector<MenuEntry> entries;
+    entries.push_back({ACT_REGISTER, "Create account"});
+    entries.push_back({ACT_LOGIN,    "Log in"});
+    entries.push_back({ACT_VIEW,     "View a game page"});
+    entries.push_back({ACT_SEARCH,   "Search"});
+    entries.push_back({ACT_SORT,     "Sort / filter by tags"});
+    return handleMenu(st, entries);
 }
 
 bool userMenu(Store& st) {
     reloadStore(st);
     if (st.current == nullptr) { doLogout(st); return true; }      // account vanished (should not happen)
     showStorePage(st);
-    std::cout << "\n1. View a game page\n2. Search\n3. Add a game to the cart\n4. Cart / checkout\n"
-              << "5. Wishlist\n6. My library\n7. Post a review / comment\n8. Publish a new game\n"
-              << "9. Wallet (add funds)\n10. Friends\n11. Messages\n12. Log out\n0. Exit\n";
-    int c = readInt("Choice: ");
-    if (c == -2) return false;              // input ended, leave the program
-    switch (c) {
-        case 1: doViewGame(st); break;
-        case 2: doSearch(st); break;
-        case 3: doAddToCart(st); break;
-        case 4: doCart(st); break;
-        case 5: doWishlist(st); break;
-        case 6: doLibrary(st); break;
-        case 7: doReview(st); break;
-        case 8: doPublish(st); break;
-        case 9: doWallet(st); break;
-        case 10: doFriends(st); break;
-        case 11: doMessages(st); break;
-        case 12: doLogout(st); break;
-        case 0: return false;
-        default: std::cout << "  Invalid choice.\n";
-    }
-    return true;
+    std::vector<MenuEntry> entries;
+    entries.push_back({ACT_VIEW,     "View a game page"});
+    entries.push_back({ACT_SEARCH,   "Search"});
+    entries.push_back({ACT_SORT,     "Sort / filter by tags"});
+    entries.push_back({ACT_ADD_CART, "Add a game to the cart"});
+    entries.push_back({ACT_CART,     "Cart / checkout"});
+    entries.push_back({ACT_WISHLIST, "Wishlist"});
+    entries.push_back({ACT_LIBRARY,  "My library"});
+    entries.push_back({ACT_REVIEW,   "Post a review / comment"});
+    entries.push_back({ACT_WALLET,   "Wallet (add funds)"});
+    entries.push_back({ACT_FRIENDS,  "Friends"});
+    entries.push_back({ACT_MESSAGES, "Messages"});
+    if (isDeveloper(st.current)) entries.push_back({ACT_STUDIO, "Developer Studio"});
+    entries.push_back({ACT_LOGOUT,   "Log out"});
+    return handleMenu(st, entries);
 }
 
 //==========================
@@ -734,7 +1019,6 @@ bool userMenu(Store& st) {
 void runStore() {
     Store st;
     initStore(st);
-    std::cout << "=== Welcome to the Game Store ===\n";
 
     bool running = true;
     while (running) {

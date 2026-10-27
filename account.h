@@ -13,8 +13,9 @@
 // Storage: singly linked list of accounts, each with its own linked
 //          list of owned game ids
 // Search : BST keyed by lowercase username (login / duplicate check)
-// File   : steam_accounts.txt -> id|username|passwordHash|ownedIds|walletCents|wishlistIds|lastSeenMsg
+// File   : steam_accounts.txt -> id|username|passwordHash|ownedIds|walletCents|wishlistIds|lastSeenMsg|role
 //          (id lists are comma separated, e.g. 1,3,4)
+// Role   : 0 = player (normal user), 1 = developer (can publish and edit games)
 // Extra per account: wallet balance (in cents), wishlist (linked list of game ids)
 //          and the newest chat message the user has already read.
 // NOTE   : the password is stored as a simple djb2 hash, not plain text.
@@ -37,6 +38,10 @@ struct WishNode {
     WishNode* next = nullptr;
 };
 
+// account types
+const int ROLE_PLAYER = 0;
+const int ROLE_DEVELOPER = 1;
+
 // the wallet can not grow past $9,999.99 (keeps the cents inside an int)
 const int MAX_WALLET_CENTS = 999999;
 
@@ -53,6 +58,7 @@ struct AccountNode {
     WishNode* wishlist = nullptr;
     int wishCount = 0;
     int lastSeenMsg = 0;            // newest chat message id the user has read
+    int role = ROLE_PLAYER;
     AccountNode* next = nullptr;
 };
 
@@ -149,7 +155,8 @@ AccountNode* findAccountById(const AccountRegistry& reg, int id) {
 // account creation
 // returns nullptr if the username is invalid / taken or the password is under 4 chars
 //==========================
-AccountNode* createAccount(AccountRegistry& reg, const std::string& username, const std::string& password) {
+AccountNode* createAccount(AccountRegistry& reg, const std::string& username, const std::string& password,
+                           int role = ROLE_PLAYER) {
     if (!validUsername(username)) return nullptr;
     if (password.size() < 4) return nullptr;
     if (findAccountByName(reg, username) != nullptr) return nullptr;
@@ -158,6 +165,7 @@ AccountNode* createAccount(AccountRegistry& reg, const std::string& username, co
     node->userId = reg.nextId++;
     node->username = username;
     node->passwordHash = hashPassword(password);
+    node->role = (role == ROLE_DEVELOPER) ? ROLE_DEVELOPER : ROLE_PLAYER;
 
     if (reg.head == nullptr) reg.head = node;
     else reg.tail->next = node;
@@ -176,6 +184,10 @@ AccountNode* loginAccount(const AccountRegistry& reg, const std::string& usernam
     if (acc == nullptr) return nullptr;
     if (acc->passwordHash != hashPassword(password)) return nullptr;
     return acc;
+}
+
+bool isDeveloper(const AccountNode* acc) {
+    return acc != nullptr && acc->role == ROLE_DEVELOPER;
 }
 
 //==========================
@@ -278,7 +290,7 @@ bool saveAccounts(const AccountRegistry& reg, const std::string& file) {
             out << w->gameId;
             if (w->next != nullptr) out << ',';
         }
-        out << '|' << cur->lastSeenMsg << '\n';
+        out << '|' << cur->lastSeenMsg << '|' << cur->role << '\n';
     }
     return true;
 }
@@ -290,14 +302,15 @@ bool loadAccounts(AccountRegistry& reg, const std::string& file) {
     std::string line;
     while (std::getline(in, line)) {
         std::stringstream ss(line);
-        std::string idText, name, hashText, ownedText, walletText, wishText, seenText;
+        std::string idText, name, hashText, ownedText, walletText, wishText, seenText, roleText;
         std::getline(ss, idText, '|');
         std::getline(ss, name, '|');
         std::getline(ss, hashText, '|');
         std::getline(ss, ownedText, '|');
         std::getline(ss, walletText, '|');       // older files stop after the owned ids,
         std::getline(ss, wishText, '|');         // the missing fields simply stay empty / 0
-        std::getline(ss, seenText);
+        std::getline(ss, seenText, '|');
+        std::getline(ss, roleText);              // older files have no role -> player
         if (idText.empty() || name.empty() || hashText.empty()) continue;
 
         AccountNode* node = new AccountNode();
@@ -319,6 +332,7 @@ bool loadAccounts(AccountRegistry& reg, const std::string& file) {
             if (!part.empty()) addWish(node, std::atoi(part.c_str()));
         }
         node->lastSeenMsg = std::atoi(seenText.c_str());
+        node->role = (std::atoi(roleText.c_str()) == ROLE_DEVELOPER) ? ROLE_DEVELOPER : ROLE_PLAYER;
 
         if (reg.head == nullptr) reg.head = node;
         else reg.tail->next = node;
