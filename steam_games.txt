@@ -1,0 +1,4 @@
+1|Space Miner|Dig asteroids, sell ore and upgrade your ship.|simulation, space, singleplayer|1499
+2|Dungeon Dash|Race through procedurally generated dungeons.|action, roguelike|999
+3|Farm Valley|Grow crops, raise animals and befriend the village.|farming, relaxing, co-op|1999
+4|Block Builders|Build anything with friends in an open sandbox.|sandbox, multiplayer, creative|0
