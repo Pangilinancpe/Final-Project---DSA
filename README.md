@@ -35,9 +35,9 @@ Everything is plain C++17 with the standard library. There is **no external libr
 
 ---
 
-## ✨ Features
+## Features
 
-### 🎮 For players
+### For players
 | | Feature | What it does |
 | :---: | :--- | :--- |
 | 🔐 | **Accounts** | Create an account and log in. Passwords are stored as a hash, never as plain text. |
@@ -50,7 +50,7 @@ Everything is plain C++17 with the standard library. There is **no external libr
 | ⭐ | **Reviews** | Recommend or not recommend a game and leave a comment (only owners can review, and posting again updates the review). |
 | 📥 | **Library and downloads** | Every game you own, and an install queue worked by a background thread with a progress bar. |
 
-### 🧭 Discover
+### Discover
 | | Feature | What it does |
 | :---: | :--- | :--- |
 | 🌟 | **Featured games** | A carousel of the best rated games. It is a circular list, so `next` after the last game shows the first one. |
@@ -59,7 +59,7 @@ Everything is plain C++17 with the standard library. There is **no external libr
 | 🎬 | **Run all lessons** | A live demo of every lesson, one at a time (`Discover` menu, or start with `--showcase`). |
 | 🧪 | **Algorithm lab** | Times the six sorting algorithms, linear against binary search, and plain against memoized Fibonacci. Shows time, comparisons and moves. |
 
-### 🛠️ For developers
+### For developers
 | | Feature | What it does |
 | :---: | :--- | :--- |
 | 🧑‍💻 | **Developer account** | A separate account type, created with a developer access code. |
@@ -67,7 +67,7 @@ Everything is plain C++17 with the standard library. There is **no external libr
 | 📈 | **Statistics** | See the owners and the rating of each of your games. |
 | 🛡️ | **Protected** | Players never see the Studio, and a developer cannot edit games published by someone else. |
 
-### 💬 Social
+### Social
 | | Feature | What it does |
 | :---: | :--- | :--- |
 | 🤝 | **Friends** | Send, accept, decline and remove friend requests. |
