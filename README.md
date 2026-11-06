@@ -154,35 +154,43 @@ The program creates its data files (`steam_*.txt`) in the folder you run it from
 ## Project structure
 
 ```
-Final-Project---DSA/
-|-- main.cpp         entry point (reads --plain / --color, screen clearing, starts the store)
-|-- store.h          the store: menus, store page, cart, wishlist, studio, friends, chat screens
-|-- screens.h        Discover, Downloads, Bundle optimizer, Friend network, Algorithm lab screens
-|-- account.h        accounts, roles (player / developer), wallet, wishlist, owned games
-|-- game.h           games, tags, price, developer, BST by title
-|-- review.h         reviews, comments and the recommendation percentage
-|-- browse.h         tag filter, tag index and sorting of the store page
-|-- cart.h           the shopping cart
-|-- friends.h        friend requests and friendships
-|-- chat.h           messages and the background listener thread
-|-- sync.h           file lock and safe file replace for several terminals
-|-- tui.h            colors, banner, aligned tables, menus, progress bar
-|-- textutil.h       UTF-8 aware length and cut
-|-- algorithms.h     bubble, selection, insertion, shell, merge, quick sort; linear and binary search
-|-- benchmark.h      timing of sorts and searches with std::chrono
-|-- stack.h          ArrayStack and LinkedStack
-|-- queue.h          LinkedQueue and CircularQueue
-|-- ring.h           circular doubly linked list with a cursor
-|-- history.h        Back / Forward, recently viewed, cart undo
-|-- downloads.h      download queue and worker thread
-|-- genre.h          genre tree and its traversals
-|-- graph.h          friend graph, BFS, DFS, suggestions
-|-- dp.h             memoized Fibonacci, knapsack, edit distance
-|-- tests/           unit tests of the data structures and algorithms
-|-- tools/           documentation generator and its cross-check
-|-- docs/DOCUMENTATION.md   every function and method, with file and line
-|-- CMakeLists.txt   build file
-`-- README.md
+📦 Final-Project---DSA/
+├── 🚀 main.cpp          entry point (--plain / --color, screen clearing, starts the store)
+│
+├── 🏪 Store and screens
+│   ├── 🛒 store.h       menus, store page, cart, wishlist, studio, friends, chat screens
+│   ├── 🧭 screens.h     Discover, Downloads, Bundle optimizer, Friend network, Algorithm lab
+│   ├── 👤 account.h     accounts, roles, wallet, wishlist, owned games
+│   ├── 🎮 game.h        games, tags, price, developer, BST by title
+│   ├── ⭐ review.h     reviews, comments, recommendation percentage
+│   ├── 🔎 browse.h      tag filter, tag index, sorting of the store page
+│   ├── 🧺 cart.h        the shopping cart
+│   ├── 🤝 friends.h     friend requests and friendships
+│   ├── 💬 chat.h        messages and the background listener thread
+│   └── 📥 downloads.h   download queue and worker thread
+│
+├── 🖥️ Terminal and system
+│   ├── 🎨 tui.h         colors, banner, aligned tables, menus, progress bar
+│   ├── 🔤 textutil.h    UTF-8 aware length and cut
+│   └── 🔒 sync.h        file lock and safe file replace for several terminals
+│
+├── 🧠 Data structures and algorithms
+│   ├── 📚 stack.h       ArrayStack and LinkedStack
+│   ├── 🚶 queue.h       LinkedQueue and CircularQueue
+│   ├── 🔄 ring.h        circular doubly linked list with a cursor
+│   ├── ⏪ history.h     Back / Forward, recently viewed, cart undo
+│   ├── 🌳 genre.h       genre tree and its traversals
+│   ├── 🕸️ graph.h       friend graph, BFS, DFS, suggestions
+│   ├── 🧩 dp.h          memoized Fibonacci, knapsack, edit distance
+│   ├── 📊 algorithms.h  bubble, selection, insertion, shell, merge, quick sort; linear and binary search
+│   └── ⏱️ benchmark.h   timing of sorts and searches with std::chrono
+│
+├── 🧪 tests/            unit tests of the data structures and algorithms
+├── 🛠️ tools/            documentation generator and its cross-check
+├── 📖 docs/
+│   └── DOCUMENTATION.md every function and method, with file and line
+├── ⚙️ CMakeLists.txt    build file
+└── 📝 README.md
 ```
 
 ### Data files
