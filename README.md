@@ -35,45 +35,45 @@ Everything is plain C++17 with the standard library. There is **no external libr
 
 ---
 
-## Features
+## ✨ Features
 
-### For players
-| | |
-| :--- | :--- |
-| **Accounts** | Create an account and log in. Passwords are stored as a hash, never as plain text. |
-| **Store page** | A colored table of all games with price, rating (% recommended) and tags. |
-| **Tags, filter and sort** | Browse every tag with its game count, filter by one or more tags, and sort by title, price or rating. |
-| **Search** | Search by part of a title or a tag. When nothing matches, the closest title is suggested ("Did you mean ...?"). |
-| **Cart and wallet** | Add games to a cart, top up a simulated wallet, and check out (all or nothing). The last cart changes can be **undone**. |
-| **Wishlist** | Save games for later and move the whole wishlist to the cart. |
-| **Bundle optimizer** | Picks the wishlist games with the best total rating that fit your budget (knapsack). |
-| **Reviews** | Recommend or not recommend a game and leave a comment (only owners can review, and posting again updates the review). |
-| **Library and downloads** | Every game you own, and an install queue worked by a background thread with a progress bar. |
+### 🎮 For players
+| | Feature | What it does |
+| :---: | :--- | :--- |
+| 🔐 | **Accounts** | Create an account and log in. Passwords are stored as a hash, never as plain text. |
+| 🏪 | **Store page** | A colored table of all games with price, rating (% recommended) and tags. |
+| 🏷️ | **Tags, filter and sort** | Browse every tag with its game count, filter by one or more tags, and sort by title, price or rating. |
+| 🔎 | **Search** | Search by part of a title or a tag. When nothing matches, the closest title is suggested ("Did you mean ...?"). |
+| 🛒 | **Cart and wallet** | Add games to a cart, top up a simulated wallet, and check out (all or nothing). The last cart changes can be **undone**. |
+| 💝 | **Wishlist** | Save games for later and move the whole wishlist to the cart. |
+| 🎒 | **Bundle optimizer** | Picks the wishlist games with the best total rating that fit your budget (knapsack). |
+| ⭐ | **Reviews** | Recommend or not recommend a game and leave a comment (only owners can review, and posting again updates the review). |
+| 📥 | **Library and downloads** | Every game you own, and an install queue worked by a background thread with a progress bar. |
 
-### Discover
-| | |
-| :--- | :--- |
-| **Featured games** | A carousel of the best rated games. It is a circular list, so `next` after the last game shows the first one. |
-| **Browse by genre** | A genre tree (action > shooter, rpg > roguelike, ...) with game counts and the three traversal orders. |
-| **Recently viewed and Back / Forward** | The last games you opened, and browser-like back and forward between game pages. |
-| **Run all lessons** | A live demo of every lesson, one lesson at a time (`Discover` menu, or start with `--showcase`). |
-| **Algorithm lab** | Times the six sorting algorithms, linear against binary search, and plain against memoized Fibonacci. Shows time, comparisons and moves. |
+### 🧭 Discover
+| | Feature | What it does |
+| :---: | :--- | :--- |
+| 🌟 | **Featured games** | A carousel of the best rated games. It is a circular list, so `next` after the last game shows the first one. |
+| 🌳 | **Browse by genre** | A genre tree (action > shooter, rpg > roguelike, ...) with game counts and the three traversal orders. |
+| 🕘 | **Recently viewed and Back / Forward** | The last games you opened, and browser-like back and forward between game pages. |
+| 🎬 | **Run all lessons** | A live demo of every lesson, one at a time (`Discover` menu, or start with `--showcase`). |
+| 🧪 | **Algorithm lab** | Times the six sorting algorithms, linear against binary search, and plain against memoized Fibonacci. Shows time, comparisons and moves. |
 
-### For developers
-| | |
-| :--- | :--- |
-| **Developer account** | A separate account type, created with a developer access code. |
-| **Developer Studio** | Publish a new game (title, description, tags, price) and edit the price, description and tags of **your own** games. |
-| **Statistics** | See the owners and the rating of each of your games. |
-| **Protected** | Players never see the Studio, and a developer cannot edit games published by someone else. |
+### 🛠️ For developers
+| | Feature | What it does |
+| :---: | :--- | :--- |
+| 🧑‍💻 | **Developer account** | A separate account type, created with a developer access code. |
+| 🏗️ | **Developer Studio** | Publish a new game (title, description, tags, price) and edit the price, description and tags of **your own** games. |
+| 📈 | **Statistics** | See the owners and the rating of each of your games. |
+| 🛡️ | **Protected** | Players never see the Studio, and a developer cannot edit games published by someone else. |
 
-### Social
-| | |
-| :--- | :--- |
-| **Friends** | Send, accept, decline and remove friend requests. |
-| **Friend network** | Friends at 1, 2 and 3 steps, people you may know (friends of friends), and the shortest chain of friends to another user. |
-| **Live chat** | Chat with friends from several terminals at the same time. A background thread shows new messages the moment they arrive. |
-| **Unread messages** | Messages that arrive while you are offline are counted at your next login. |
+### 💬 Social
+| | Feature | What it does |
+| :---: | :--- | :--- |
+| 🤝 | **Friends** | Send, accept, decline and remove friend requests. |
+| 🕸️ | **Friend network** | Friends at 1, 2 and 3 steps, people you may know (friends of friends), and the shortest chain of friends to another user. |
+| ⚡ | **Live chat** | Chat with friends from several terminals at the same time. A background thread shows new messages the moment they arrive. |
+| 🔔 | **Unread messages** | Messages that arrive while you are offline are counted at your next login. |
 
 ---
 
