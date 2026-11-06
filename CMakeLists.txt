@@ -20,7 +20,19 @@ add_executable(game_store
         friends.h
         game.h
         review.h
-        sync.h)
+        sync.h
+        screens.h
+        textutil.h
+        algorithms.h
+        benchmark.h
+        stack.h
+        queue.h
+        ring.h
+        history.h
+        downloads.h
+        genre.h
+        graph.h
+        dp.h)
         
 target_link_libraries(game_store PRIVATE Threads::Threads)
 
@@ -51,4 +63,19 @@ if (WIN32 AND NOT MSVC)
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${WINPTHREAD_DLL}" "$<TARGET_FILE_DIR:game_store>")
     endif()
+endif()
+
+# Unit tests of the data structures and algorithms (optional):  cmake -DBUILD_TESTS=ON ..
+# Each file in tests/ is a small program that stops with an assertion when something is wrong.
+option(BUILD_TESTS "Build the unit tests in tests/" OFF)
+if (BUILD_TESTS)
+    enable_testing()
+    foreach(name test_ds test_graph_dp test_tree_hist test_dl test_bench)
+        add_executable(${name} tests/${name}.cpp)
+        target_link_libraries(${name} PRIVATE Threads::Threads)
+        # the tests use assert(), so keep it on even in a Release build
+        target_compile_options(${name} PRIVATE $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
+        set_target_properties(${name} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+        add_test(NAME ${name} COMMAND ${name})
+    endforeach()
 endif()

@@ -1,0 +1,19 @@
+# data files are created when the program runs (the accounts file holds password hashes)
+steam_*.txt
+*.lock/
+*.tmp
+
+# build output
+build/
+cmake-build-*/
+main
+main.exe
+game_store
+game_store.exe
+
+# IDE
+.idea/
+.vscode/
+
+# python
+__pycache__/
